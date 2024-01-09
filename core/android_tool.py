@@ -1,33 +1,123 @@
-import argparse
 import asyncio
 import json
 import re
 import time
 import traceback
-import adbutils
 from logzero import logger
 from adbutils import adb, AdbDevice
+import logzero
 
-from fps import Fps
-from monitor import Monitor
+from core.monitor import Monitor
+
+# logzero.logfile("android_tool.log", encoding="utf-8")
+# logger = logzero.logger
 
 version = "1.0.0"
 
 
+class Fps(object):
+    frame_que = list()
+    surface_view = None
+    before_get_view_data_status = False  # 上次获取view的结果，如果拿到了结果就不用修改view
+    single_instance = None
+
+    @staticmethod
+    def check_queue_head_frames_complete():
+        if not Fps.frame_que:
+            return False
+        head_time = int(Fps.frame_que[0])
+        end_time = int(Fps.frame_que[-1])
+        if head_time == end_time:
+            return False
+        return True
+
+    @staticmethod
+    def pop_complete_fps():
+        head_time = int(Fps.frame_que[0])
+        complete_fps = []
+        while int(Fps.frame_que[0]) == head_time:
+            complete_fps.append(Fps.frame_que.pop(0))
+        return complete_fps
+
+    def __init__(self, device: AdbDevice, package):
+        self.package = package
+        self.device = device
+        self.device.shell("dumpsys SurfaceFlinger --latency-clear")
+
+    def __new__(cls, *args, **kwargs):
+        if not cls.single_instance:
+            cls.single_instance = super().__new__(cls)
+        cls.single_instance.device, cls.single_instance.package = args
+        return cls.single_instance
+
+    async def get_surface_view(self):
+        all_list = await asyncio.to_thread(self.device.shell,
+                                           "dumpsys SurfaceFlinger --list | grep {0}".format(self.package))
+        views = all_list.split("\n")
+        cur_view, view_data = await self.get_right_view(views)
+        if cur_view:
+            Fps.surface_view = cur_view
+            Fps.before_get_view_data_status = True
+        else:
+            Fps.before_get_view_data_status = False
+        return cur_view, view_data
+
+    async def get_right_view(self, views):
+        views = [i for i in views if not "Background for" in i]
+        views_spec = [i for i in views if ("SurfaceView" in i) or ("BLAST" in i)]
+        if views_spec:
+            views = views_spec
+        res = await asyncio.gather(*[self.get_view_res(view) for view in views])
+        right_view = None
+        right_view_data = []
+        for index, view_res in enumerate(res):
+            if not view_res:
+                continue
+            if len(view_res) < 127:
+                continue
+            right_view = views[index]
+            right_view_data = view_res
+        return right_view, right_view_data
+
+    async def get_view_res(self, view):
+        if view:
+            res_str = await asyncio.to_thread(self.device.shell, "dumpsys SurfaceFlinger --latency '{0}' ".format(view))
+            return [float(i.split()[1]) / 1e9 for i in res_str.split("\n") if len(i.split()) >= 3]
+        else:
+            return []
+
+    async def fps(self):
+        while not self.check_queue_head_frames_complete():
+            cur_frames = []
+            if not Fps.before_get_view_data_status:
+                view, cur_frames = await self.get_surface_view()
+            else:
+                cur_frames = await self.get_view_res(Fps.surface_view)
+            new_frames = [i for i in cur_frames if ((not Fps.frame_que) or (i > Fps.frame_que[-1])) and i != 0]
+            if not cur_frames or cur_frames[-1] <= 0:
+                Fps.surface_view = None
+                Fps.before_get_view_data_status = False
+            Fps.frame_que.extend(new_frames)
+            await asyncio.sleep(0.5)
+        return self.pop_complete_fps()
+
+
 def print_json(data, *args, **kwargs):
     data_json = json.dumps(data)
-    print(data_json, *args, **kwargs)
+    logger.info(data_json, *args, **kwargs)
 
 
 async def install(device: AdbDevice, apk_path):
     res_msg = await asyncio.to_thread(device.install, apk_path,
                                       flags=["-r", "-d", "-g", "-t"])
     print_json({"res_msg": res_msg})
+    return res_msg
 
 
 async def uninstall(device: AdbDevice, package):
     res_msg = await asyncio.to_thread(device.uninstall, package=package)
     print_json({"res_msg": res_msg})
+    return res_msg
 
 
 async def list_devices():
@@ -56,11 +146,14 @@ async def app_list(device: AdbDevice):
 
 
 async def screenshot(device: AdbDevice):
-    return await asyncio.to_thread(device.screenshot)
+    res = await asyncio.to_thread(device.screenshot)
+    return res
 
 
 async def launch(device: AdbDevice, package):
-    await asyncio.to_thread(device.app_start, package)
+    res = await asyncio.to_thread(device.app_start, package)
+    print_json(res)
+    return res
 
 
 PS_DICT = {}  # 公用的获取package与pid对应的dict,实时更新
@@ -103,7 +196,7 @@ async def get_pid(device: AdbDevice, package):
         return None
 
 
-async def get_sdk_versin(device: AdbDevice):
+async def get_sdk_version(device: AdbDevice):
     sdk_version = device.shell("getprop ro.build.version.sdk")
     return 25 if not sdk_version else int(sdk_version)
 
@@ -266,18 +359,18 @@ async def battery(device: AdbDevice):
     return result_dict
 
 
-async def perf(monitor_list: list, **kwargs):
+async def perf(monitor_list: list, device: AdbDevice, package, ws):
     monitors = {
-        "cpu": Monitor(cpu, device=kwargs.get("DEVICE"), package=kwargs.get("package")),
-        "memory": Monitor(memory, device=kwargs.get("DEVICE"), package=kwargs.get("package")),
-        "package_process_info": Monitor(package_process_info, device=kwargs.get("DEVICE"),
-                                        package=kwargs.get("package")),
-        "fps": Monitor(fps, device=kwargs.get("DEVICE"), package=kwargs.get("package")),
-        "battery": Monitor(battery, device=kwargs.get("DEVICE")),
-        "gpu": Monitor(gpu, device=kwargs.get("DEVICE")),
-        "ps": Monitor(ps, device=kwargs.get("DEVICE"), is_out=False)
+        "cpu": Monitor(cpu, device=device, package=package, ws=ws),
+        "memory": Monitor(memory, device=device, package=package, ws=ws),
+        "package_process_info": Monitor(package_process_info, device=device,
+                                        package=package, ws=ws),
+        "fps": Monitor(fps, device=device, package=package, ws=ws),
+        "battery": Monitor(battery, device=device, ws=ws),
+        "gpu": Monitor(gpu, device=device, ws=ws),
+        "ps": Monitor(ps, device=device, is_out=False, ws=ws)
     }
-    await ps(device=kwargs.get("DEVICE"), is_out=False)
+    await ps(device=device, is_out=False)
     run_monitors = [monitors.get(i).run() for i in monitor_list if i in monitors.keys()]
     run_monitors.append(monitors.get("ps").run())
     await asyncio.gather(*run_monitors)

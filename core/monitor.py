@@ -3,6 +3,8 @@ import threading
 import time
 from threading import Event
 
+from web import PerfWebSocket
+
 
 class MonitorIter(object):
 
@@ -23,17 +25,19 @@ class MonitorIter(object):
 
 class Monitor(object):
 
-    def __init__(self, func, **kwargs):
+    def __init__(self, func, ws, **kwargs):
         super(Monitor, self).__init__()
         self.stop_event = Event()
         self.func = func
         self.kwargs = kwargs
         self.stop_event.set()
+        self.ws = ws
 
     async def run(self):
         async for _ in MonitorIter(self.stop_event):
             before_func = time.time()
-            await self.func(**self.kwargs)
+            res = await self.func(**self.kwargs)
+            self.ws.write(res)
             end_func = time.time()
             if interval_time := (int(end_func) - int(before_func)) <= 1:
                 await asyncio.sleep(interval_time)
