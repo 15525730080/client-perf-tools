@@ -1,8 +1,6 @@
-import asyncio
 import base64
 import inspect
-from typing import Optional, Awaitable
-
+import threading
 import adbutils
 import tornado
 from PIL import Image
@@ -40,20 +38,18 @@ class PerfWebSocket(WebSocketHandler):
         return True
 
     def open(self):
-        print("WebSocket opened", self.request.arguments)
-        asyncio.run(perf(["cpu", "memory", "fps", "gpu", "package_process_info", "battery", "ps"],
-                         adbutils.AdbDevice(serial=self.request.arguments["serial"]), self.request.arguments["package"],
-                         self))
-
-    def on_message(self, message):
-        self.write_message(u"You said: " + message)
+        def run():
+            asyncio.run(perf(["cpu", "memory", "fps", "gpu", "package_process_info", "battery", "ps"],
+                             adbutils.device(serial=str(self.request.arguments["serial"][0].decode())),
+                             str(self.request.arguments["package"][0].decode()),
+                             self))
+        threading.Thread(target=run).start()
 
     def on_close(self):
-        print("WebSocket closed")
-
+        ANDROID_MONITORS[str(self.request.arguments["serial"][0].decode())].stop()
 
 class WebHandler(tornado.web.RequestHandler):
-    def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
+    def data_received(self, chunk: bytes):
         logger.info(chunk)
 
     def set_default_headers(self):

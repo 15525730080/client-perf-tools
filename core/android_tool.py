@@ -359,6 +359,9 @@ async def battery(device: AdbDevice):
     return result_dict
 
 
+ANDROID_MONITORS = {}
+
+
 async def perf(monitor_list: list, device: AdbDevice, package, ws):
     monitors = {
         "cpu": Monitor(cpu, device=device, package=package, ws=ws),
@@ -373,5 +376,5 @@ async def perf(monitor_list: list, device: AdbDevice, package, ws):
     await ps(device=device, is_out=False)
     run_monitors = [monitors.get(i).run() for i in monitor_list if i in monitors.keys()]
     run_monitors.append(monitors.get("ps").run())
+    ANDROID_MONITORS[device.serial] = monitors
     await asyncio.gather(*run_monitors)
-
