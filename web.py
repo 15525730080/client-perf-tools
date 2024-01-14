@@ -1,6 +1,8 @@
+import asyncio
 import base64
-import inspect
 import threading
+import traceback
+
 import adbutils
 import tornado
 from PIL import Image
@@ -28,7 +30,7 @@ async def handle_request(func, **kwargs):
         return {"error": str(e)}
 
 
-class Error(object):
+class CommonError(object):
     LOSE_SERIAL = "缺少设备序列号"
     INVALID_FUNC = "不存在的方法"
 
@@ -39,14 +41,33 @@ class PerfWebSocket(WebSocketHandler):
 
     def open(self):
         def run():
-            asyncio.run(perf(["cpu", "memory", "fps", "gpu", "package_process_info", "battery", "ps"],
-                             adbutils.device(serial=str(self.request.arguments["serial"][0].decode())),
-                             str(self.request.arguments["package"][0].decode()),
-                             self))
-        threading.Thread(target=run).start()
+            if self.request.arguments["serial"] and self.request.arguments["package"]:
+                serial = self.request.arguments["serial"][0].decode()
+                package = self.request.arguments["package"][0].decode()
+                if serial and package:
+                    self.serial = serial
+                    try:
+                        asyncio.run(perf([
+                            "cpu", "memory",
+                            "fps",
+                            "gpu", "package_process_info", "battery", "ps"
+                            ],
+                                         adbutils.device(serial=serial), package, self))
+                    except Exception as e:
+                        traceback.print_exc()
+                        logger.error(e)
+                    logger.info("stop success")
+
+        th = threading.Thread(target=run)
+        th.start()
+        logger.info("start {0}".format(self))
 
     def on_close(self):
-        ANDROID_MONITORS[str(self.request.arguments["serial"][0].decode())].stop()
+        if self.monitors:
+            for key, cur_coroutine in self.monitors.items():
+                cur_coroutine.stop()
+        logger.info("close end")
+
 
 class WebHandler(tornado.web.RequestHandler):
     def data_received(self, chunk: bytes):
@@ -59,16 +80,12 @@ class WebHandler(tornado.web.RequestHandler):
 
     async def get(self, func_name):
         device_serial = self.get_query_argument("device_serial", default=None)
-
-        if not device_serial and func_name != "list_devices":
-            self.write(json.dumps({"error": Error.LOSE_SERIAL}))
-            return
-
         func = globals().get(func_name)
-        device = adbutils.device(serial=device_serial) if device_serial else None
-
+        device = None
+        if device_serial:
+            device = adbutils.device(serial=device_serial) if device_serial else None
         if not func or not callable(func):
-            self.write(json.dumps({"error": Error.INVALID_FUNC}))
+            self.write(json.dumps({"error": CommonError.INVALID_FUNC}))
             return
 
         func_args = {k: self.get_query_argument(k) for k in self.request.arguments}
@@ -87,4 +104,7 @@ def make_app():
 if __name__ == "__main__":
     app = make_app()
     app.listen(8888)
+    logger.info("server star")
     tornado.ioloop.IOLoop.current().start()
+    asyncio.run(Fps(adbutils.device(serial="4bce207"), "com.sankuai.meituan").gfx_fps())
+    # asyncio.run(Fps(adbutils.device(serial="4bce207"), "com.sankuai.meituan").fps())

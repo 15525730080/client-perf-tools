@@ -38,9 +38,10 @@ class Monitor(object):
         async for _ in MonitorIter(self.stop_event):
             before_func = time.time()
             res = await self.func(**self.kwargs)
-            self.ws.write_message(json.dumps(res))
+            if self.kwargs.get("is_out", True):
+                self.ws.write_message(json.dumps(res))
             end_func = time.time()
-            if interval_time := (int(end_func) - int(before_func)) <= 1:
+            if interval_time := (int(end_func) - int(before_func)) <= 2:
                 await asyncio.sleep(interval_time)
 
     def stop(self):

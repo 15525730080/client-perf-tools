@@ -1,18 +1,21 @@
 import asyncio
+import inspect
 import json
 import re
 import time
 import traceback
 from logzero import logger
 from adbutils import adb, AdbDevice
-import logzero
-
 from core.monitor import Monitor
-
-# logzero.logfile("android_tool.log", encoding="utf-8")
-# logger = logzero.logger
+from web import PerfWebSocket
 
 version = "1.0.0"
+
+
+async def router():
+    return [{"interface": k, "params": [i.replace("device", "serial") for i in inspect.signature(v).parameters]} for
+            k, v in globals().items() if
+            callable(v) and k[0].islower()]
 
 
 class Fps(object):
@@ -37,12 +40,15 @@ class Fps(object):
         complete_fps = []
         while int(Fps.frame_que[0]) == head_time:
             complete_fps.append(Fps.frame_que.pop(0))
+        print(complete_fps)
         return complete_fps
 
     def __init__(self, device: AdbDevice, package):
         self.package = package
         self.device = device
         self.device.shell("dumpsys SurfaceFlinger --latency-clear")
+        self.device.shell("dumpsys gfxinfo {} reset".format(self.package))
+        self.start_collect_time = int(time.time())
 
     def __new__(cls, *args, **kwargs):
         if not cls.single_instance:
@@ -82,7 +88,15 @@ class Fps(object):
     async def get_view_res(self, view):
         if view:
             res_str = await asyncio.to_thread(self.device.shell, "dumpsys SurfaceFlinger --latency '{0}' ".format(view))
-            return [float(i.split()[1]) / 1e9 for i in res_str.split("\n") if len(i.split()) >= 3]
+            frames = []
+            print(res_str, view)
+            for i in res_str.split("\n"):
+                if len(i.split()) >= 3:
+                    if len(i.split()[1]) > 16:
+                        continue
+                    cur_frame_time = float(i.split()[1]) / 1e9 + self.start_collect_time
+                    frames.append(cur_frame_time)
+            return frames
         else:
             return []
 
@@ -91,6 +105,7 @@ class Fps(object):
             cur_frames = []
             if not Fps.before_get_view_data_status:
                 view, cur_frames = await self.get_surface_view()
+                print(view, cur_frames)
             else:
                 cur_frames = await self.get_view_res(Fps.surface_view)
             new_frames = [i for i in cur_frames if ((not Fps.frame_que) or (i > Fps.frame_que[-1])) and i != 0]
@@ -98,8 +113,45 @@ class Fps(object):
                 Fps.surface_view = None
                 Fps.before_get_view_data_status = False
             Fps.frame_que.extend(new_frames)
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.8)
         return self.pop_complete_fps()
+
+    async def get_top_activity(self):
+        dat = await asyncio.to_thread(self.device.shell, "dumpsys activity top")
+        activity_re = re.compile(r'\s*ACTIVITY ([A-Za-z0-9_.$]+)/([A-Za-z0-9_.$]+) \w+')
+        # in Android8.0 or higher, the result may be more than one
+        m = activity_re.findall(dat)
+        return "/".join(m[-1]) if m else -1
+
+    async def gfx_fps(self):
+        info = await asyncio.to_thread(self.device.shell, "dumpsys gfxinfo {} framestats ".format(self.package))
+        info = info.split("\n")
+        data_list = []
+        top_activity_info = await self.get_top_activity()
+        print(top_activity_info, info)
+        start_data = False  # 控制获取数据
+        activity = False  # 控制获取当前activity
+        data_list = []
+        for i in info:
+            if str(top_activity_info) in str(i).strip():
+                activity = True
+            if activity:
+                if "PROFILEDATA" in i:
+                    if start_data:
+                        start_data = False
+                        activity = False
+                        break
+                    else:
+                        start_data = True
+                        continue
+            if start_data:
+                try:
+                    data_list.append(int(i.split(",")[13]) / 1e9)
+                except ValueError as e:
+                    logger.error(e)
+        print(data_list)
+        await asyncio.to_thread(self.device.shell, ("dumpsys gfxinfo {} reset ".format(self.package)))
+        return data_list
 
 
 def print_json(data, *args, **kwargs):
@@ -359,10 +411,11 @@ async def battery(device: AdbDevice):
     return result_dict
 
 
-ANDROID_MONITORS = {}
+async def shell(device: AdbDevice, cmd):
+    return await asyncio.to_thread(device.shell, cmd)
 
 
-async def perf(monitor_list: list, device: AdbDevice, package, ws):
+async def perf(monitor_list: list, device: AdbDevice, package, ws: PerfWebSocket):
     monitors = {
         "cpu": Monitor(cpu, device=device, package=package, ws=ws),
         "memory": Monitor(memory, device=device, package=package, ws=ws),
@@ -373,8 +426,8 @@ async def perf(monitor_list: list, device: AdbDevice, package, ws):
         "gpu": Monitor(gpu, device=device, ws=ws),
         "ps": Monitor(ps, device=device, is_out=False, ws=ws)
     }
+    ws.monitors = monitors
     await ps(device=device, is_out=False)
     run_monitors = [monitors.get(i).run() for i in monitor_list if i in monitors.keys()]
     run_monitors.append(monitors.get("ps").run())
-    ANDROID_MONITORS[device.serial] = monitors
     await asyncio.gather(*run_monitors)
