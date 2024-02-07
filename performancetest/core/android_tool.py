@@ -1,21 +1,11 @@
 import asyncio
-import inspect
-import json
 import re
 import time
 import traceback
+from pathlib import Path
 from logzero import logger
 from adbutils import adb, AdbDevice
-from core.monitor import Monitor
-from web import PerfWebSocket
-
-version = "1.0.0"
-
-
-async def router():
-    return [{"interface": k, "params": [i.replace("device", "serial") for i in inspect.signature(v).parameters]} for
-            k, v in globals().items() if
-            callable(v) and k[0].islower()]
+from monitor import Monitor, print_json
 
 
 class Fps(object):
@@ -40,7 +30,6 @@ class Fps(object):
         complete_fps = []
         while int(Fps.frame_que[0]) == head_time:
             complete_fps.append(Fps.frame_que.pop(0))
-        print(complete_fps)
         return complete_fps
 
     def __init__(self, device: AdbDevice, package):
@@ -89,7 +78,7 @@ class Fps(object):
         if view:
             res_str = await asyncio.to_thread(self.device.shell, "dumpsys SurfaceFlinger --latency '{0}' ".format(view))
             frames = []
-            print(res_str, view)
+            logger.info(res_str, view)
             for i in res_str.split("\n"):
                 if len(i.split()) >= 3:
                     if len(i.split()[1]) > 16:
@@ -105,7 +94,7 @@ class Fps(object):
             cur_frames = []
             if not Fps.before_get_view_data_status:
                 view, cur_frames = await self.get_surface_view()
-                print(view, cur_frames)
+                logger.info(view, cur_frames)
             else:
                 cur_frames = await self.get_view_res(Fps.surface_view)
             new_frames = [i for i in cur_frames if ((not Fps.frame_que) or (i > Fps.frame_que[-1])) and i != 0]
@@ -128,7 +117,7 @@ class Fps(object):
         info = info.split("\n")
         data_list = []
         top_activity_info = await self.get_top_activity()
-        print(top_activity_info, info)
+        logger.info(top_activity_info, info)
         start_data = False  # 控制获取数据
         activity = False  # 控制获取当前activity
         data_list = []
@@ -149,27 +138,8 @@ class Fps(object):
                     data_list.append(int(i.split(",")[13]) / 1e9)
                 except ValueError as e:
                     logger.error(e)
-        print(data_list)
         await asyncio.to_thread(self.device.shell, ("dumpsys gfxinfo {} reset ".format(self.package)))
         return data_list
-
-
-def print_json(data, *args, **kwargs):
-    data_json = json.dumps(data)
-    logger.info(data_json, *args, **kwargs)
-
-
-async def install(device: AdbDevice, apk_path):
-    res_msg = await asyncio.to_thread(device.install, apk_path,
-                                      flags=["-r", "-d", "-g", "-t"])
-    print_json({"res_msg": res_msg})
-    return res_msg
-
-
-async def uninstall(device: AdbDevice, package):
-    res_msg = await asyncio.to_thread(device.uninstall, package=package)
-    print_json({"res_msg": res_msg})
-    return res_msg
 
 
 async def list_devices():
@@ -197,14 +167,13 @@ async def app_list(device: AdbDevice):
     return apps_versions
 
 
-async def screenshot(device: AdbDevice):
+async def screenshot(device: AdbDevice, save_dir):
+    start_time = int(time.time())
     res = await asyncio.to_thread(device.screenshot)
-    return res
-
-
-async def launch(device: AdbDevice, package):
-    res = await asyncio.to_thread(device.app_start, package)
-    print_json(res)
+    dir_instance = Path(save_dir)
+    screenshot_dir = dir_instance.joinpath("screenshot")
+    screenshot_dir.mkdir(exist_ok=True)
+    res.save(screenshot_dir.joinpath(str(start_time) + ".png"))
     return res
 
 
@@ -240,7 +209,7 @@ async def ps(device: AdbDevice, is_out=True):
     return res
 
 
-async def get_pid(device: AdbDevice, package):
+async def get_pid(package):
     filter_pids = [i.get("PID") for i in PS_DICT if package in i.get("CMD")]
     if filter_pids:
         return filter_pids[0]
@@ -254,6 +223,8 @@ async def get_sdk_version(device: AdbDevice):
 
 
 async def cpu(device: AdbDevice, package):
+    start_time = int(time.time())
+
     async def get_process_cpu_stat():
         """get the cpu usage of a process at a certain time"""
         cmd = 'cat /proc/{}/stat'.format(process_id)
@@ -313,17 +284,19 @@ async def cpu(device: AdbDevice, package):
             logger.error(e)
         return app_cpu_rate, sys_cpu_rate
 
-    process_id = await get_pid(device, package)
+    process_id = await get_pid(package)
     if process_id:
         app_cpu_rate, sys_cpu_rate = await get_android_cpu_rate()
-        res = {"type": "cpu", "cpu_rate": app_cpu_rate, "sys_cpu_rate": sys_cpu_rate}
+        res = {"type": "cpu", "cpu_rate": app_cpu_rate, "sys_cpu_rate": sys_cpu_rate, "time": start_time}
     else:
-        res = {"type": "cpu", "cpu_rate": 0, "sys_cpu_rate": 0}
+        res = {"type": "cpu", "cpu_rate": 0, "sys_cpu_rate": 0, "time": start_time}
     print_json(res)
     return res
 
 
 async def memory(device: AdbDevice, package):
+    start_time = int(time.time())
+
     async def get_memory():
         """Get the Android memory information, unit: MB"""
         patterns = {
@@ -350,19 +323,22 @@ async def memory(device: AdbDevice, package):
             total_pass, swap_pass = 0, 0
             memory_detail = {key.lower().replace(' ', '_'): 0 for key in patterns}
             traceback.print_exc()
-        return {"type": "memory", "total_memory": total_pass, "swap_memory": swap_pass, "memory_detail": memory_detail}
+        res = {"type": "memory", "total_memory": total_pass, "swap_memory": swap_pass, "time": start_time}
+        res.update(memory_detail)
+        return res
 
-    process_id = await get_pid(device, package)
+    process_id = await get_pid(package)
     if process_id:
         memory_info = await get_memory()
     else:
-        memory_info = {"type": "memory", "total_memory": 0, "swap_memory": 0, "memory_detail": {}}
+        memory_info = {"type": "memory", "total_memory": 0, "swap_memory": 0, "memory_detail": {}, "time": start_time}
     print_json(memory_info)
     return memory_info
 
 
 async def package_process_info(device: AdbDevice, package):
-    process_id = await get_pid(device, package)
+    start_time = int(time.time())
+    process_id = await get_pid(package)
     if process_id:
         cmd = "cat /proc/{0}/status | grep -E 'Threads:|FDSize:|voluntary_ctxt_switches:|nonvoluntary_ctxt_switches:'".format(
             process_id)
@@ -372,18 +348,20 @@ async def package_process_info(device: AdbDevice, package):
     else:
         info_dict = {}
     info_dict["type"] = "package_process_info"
+    info_dict["time"] = start_time
     print_json(info_dict)
     return info_dict
 
 
 async def fps(device: AdbDevice, package):
     frames = await Fps(device, package).fps()
-    res = {"type": "fps", "fps": len(frames), "frames": frames}
+    res = {"type": "fps", "fps": len(frames), "frames": frames, "time": int(frames[0])}
     print_json(res)
     return res
 
 
 async def gpu(device: AdbDevice):
+    start_time = int(time.time())
     cmd = 'cat /sys/class/kgsl/kgsl-3d0/gpubusy'
     output = await asyncio.to_thread(device.shell, cmd)
     output = output.strip()
@@ -396,17 +374,19 @@ async def gpu(device: AdbDevice):
         gpu_info = int(res_n[0]) / int(res_n[1]) * 100
     except Exception as e:
         logger.error(e)
-    res = {"type": "gpu", "gpu": gpu_info}
+    res = {"type": "gpu", "gpu": gpu_info, "time": start_time}
     print_json(res)
     return res
 
 
 async def battery(device: AdbDevice):
+    start_time = int(time.time())
     device_battery_info = await asyncio.to_thread(device.shell, "dumpsys battery")
     pattern = re.compile(r'\s*([^:]+):\s*(\S+)', re.MULTILINE)
     matches = pattern.findall(device_battery_info)
     result_dict = dict(matches)
     result_dict["type"] = "battery"
+    result_dict["time"] = start_time
     print_json(result_dict)
     return result_dict
 
@@ -415,19 +395,51 @@ async def shell(device: AdbDevice, cmd):
     return await asyncio.to_thread(device.shell, cmd)
 
 
-async def perf(monitor_list: list, device: AdbDevice, package, ws: PerfWebSocket):
+async def perf(device: AdbDevice, package, save_dir):
     monitors = {
-        "cpu": Monitor(cpu, device=device, package=package, ws=ws),
-        "memory": Monitor(memory, device=device, package=package, ws=ws),
-        "package_process_info": Monitor(package_process_info, device=device,
-                                        package=package, ws=ws),
-        "fps": Monitor(fps, device=device, package=package, ws=ws),
-        "battery": Monitor(battery, device=device, ws=ws),
-        "gpu": Monitor(gpu, device=device, ws=ws),
-        "ps": Monitor(ps, device=device, is_out=False, ws=ws)
+        "cpu": Monitor(cpu,
+                       device=device,
+                       package=package,
+                       key_value=["time", "cpu_rate(%)", "sys_cpu_rate(%)"],
+                       name="cpu",
+                       save_dir=save_dir),
+        "memory": Monitor(memory,
+                          device=device,
+                          package=package,
+                          key_value=["time", "total_memory(M)", "swap_memory(M)", "java_heap(M)", "native_heap(M)",
+                                     "code(M)", "stack(M)", "graphics(M)", "private_other(M)", "system(M)"],
+                          name="memory",
+                          save_dir=save_dir),
+        "package_process_info": Monitor(package_process_info,
+                                        device=device,
+                                        package=package,
+                                        key_value=["time", "handle_nums(个)", "threads(个)", "voluntary_ctxt_switches(次)",
+                                                   "nonvoluntary_ctxt_switches(次)"], name="package_process_info",
+                                        save_dir=save_dir),
+        "fps": Monitor(fps,
+                       device=device,
+                       package=package,
+                       key_value=["time", "fps(帧)"],
+                       name="fps",
+                       save_dir=save_dir),
+        "battery": Monitor(battery,
+                           device=device,
+                           key_value=["time", "temperature(℃)", "level(%)"],
+                           name="battery",
+                           save_dir=save_dir),
+        "gpu": Monitor(gpu,
+                       device=device,
+                       key_value=["time", "gpu(%)"],
+                       name="gpu",
+                       save_dir=save_dir),
+        "screenshot": Monitor(screenshot,
+                              device=device,
+                              name="screenshot",
+                              save_dir=save_dir, is_out=False),
+        "ps": Monitor(ps,
+                      device=device,
+                      is_out=False)
     }
-    ws.monitors = monitors
-    await ps(device=device, is_out=False)
-    run_monitors = [monitors.get(i).run() for i in monitor_list if i in monitors.keys()]
-    run_monitors.append(monitors.get("ps").run())
+    await ps(device=device, is_out=False)  # 提前给PS_DICT值
+    run_monitors = [monitor.run() for name, monitor in monitors.items()]
     await asyncio.gather(*run_monitors)

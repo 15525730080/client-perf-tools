@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>性能测试报告</title>
+    <link href="https://unpkg.com/element-ui/lib/theme-chalk/index.css" rel="stylesheet">
+    <link href="https://unpkg.com/swiper/swiper-bundle.min.css" rel="stylesheet">
+    <script src="https://cdn.staticfile.org/vue/2.4.2/vue.min.js"></script>
+    <script src="https://unpkg.com/element-ui/lib/index.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://unpkg.com/echarts/dist/echarts.min.js"></script>
+    <script src="https://unpkg.com/swiper/swiper-bundle.min.js"></script>
+    <style>
+		.el-carousel__item h3 {
+		  color: #475669;
+		  font-size: 14px;
+		  opacity: 0.75;
+		  line-height: 200px;
+		  /* margin: 0; */
+		}
+
+		.el-carousel__item:nth-child(2n) {
+		  background-color: #fff;
+		}
+
+		.el-carousel__item:nth-child(2n+1) {
+		  background-color: #fff;
+		}
+		.sticky-header {
+			position: sticky;
+			top: 0;
+			z-index: 999;
+			/* margin-bottom: 1rem;
+			margin-top: 1rem; */
+			/* 其他样式 */
+		}
+    .phone-card {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .phone-img {
+      width: 100px;
+      height: 100px;
+      margin-right: 20px;
+      border-radius: 5px;
+    }
+    .phone-name {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .phone-info {
+      font-size: 14px;
+      color: #666;
+    }
+
+	.el-menu-vertical-demo {
+	margin-top: 7vh;
+    height: 87vh;
+    overflow-y: auto;
+    border-radius: 30px;
+    background-color: #f8f9fa;
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
+    padding: 0 5px;
+	}
+
+	.menu-item {
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		font-size: 14px;
+		padding: 8px 12px;
+		border-radius: 30px;
+		margin: 4px 5px;
+		cursor: pointer;
+		background-color: #ffffff;
+		transition: background-color 0.3s;
+	}
+
+	.menu-item:hover {
+		background-color: #f5f5f5;
+	}
+
+	.task-button {
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		font-size: 16px;
+		padding: 10px;
+		border-radius: 30px;
+		background-color: #409eff;
+		color: #fff;
+		cursor: pointer;
+		margin-bottom: 16px;
+	}
+
+	.task-button:hover {
+		background-color: #66b1ff;
+	}
+
+	body {
+		background: linear-gradient(-45deg, #f0f0f0, #909399, #f1f1f1, #C0C4CC);
+		background-size: 400% 400%;
+		animation: gradient 10s ease infinite;
+	}
+
+	.el-dropdown-link {
+		font-weight: bold;
+		color: #333;
+		font-size: 2.0em;
+		display: flex;
+		align-items: center;
+	}
+
+	.el-icon-user-solid,
+	.el-icon-arrow-down {
+	margin-left: 5px;
+	color: #333;
+	}
+	@keyframes gradient {
+		0% {
+			background-position: 0% 50%;
+		}
+		50% {
+			background-position: 100% 50%;
+		}
+		100% {
+			background-position: 0% 50%;
+		}
+	}
+	.scrollable-container {
+    width: 300px; /* 容器宽度 */
+    height: 200px; /* 容器高度 */
+    overflow: auto; /* 允许滚动 */
+    padding-right: 20px; /* 为了不遮挡内容，增加右侧内边距 */
+	}
+	.is-checked {
+		background-color: #C0C4CC;
+		border-radius: 10px;
+	}
+
+
+
+
+
+    </style>
+</head>
+<body>
+<div id="app">
+    <el-container>
+        <div class="sticky-header" style="height: 100%">
+            <el-aside style="text-align: center; overflow-y: auto;overflow: hidden;" width="15rem">
+                <el-menu :default-active="taskid" class="el-menu-vertical-demo">
+                    <div :key="item" v-for="item,index in tasklist">
+                        <el-menu-item :index="item.id" @click="changeclicktask(item.id)"> {{item.start_time}}
+                            <i class="el-icon-edit"></i>
+                        </el-menu-item>
+                    </div>
+                </el-menu>
+            </el-aside>
+        </div>
+        <el-container>
+            <el-header style="display: flex; justify-content: space-between; align-items: center; height: 5vh;">
+                <el-button type="danger" round style="font-weight: bold;font-size: 16px;color: #333;width: 100%;"
+                           @click="createtaskdialogVisible=true">创建新的性能测试任务
+                </el-button>
+                <el-dropdown @command="myToken">
+				  <span class="el-dropdown-link" style="display: flex; align-items: center;">
+					<i class="el-icon-user-solid" style="margin-right: 5px;"></i>
+					<i class="el-icon-arrow-down"></i>
+				  </span>
+                    <el-dropdown-menu slot="dropdown">
+                        <el-dropdown-item command="myinfo">我的唯一标识</el-dropdown-item>
+                        <el-dropdown-item command="login">切换登录信息</el-dropdown-item>
+                    </el-dropdown-menu>
+                </el-dropdown>
+            </el-header>
+            <el-main style="overflow: visible;">
+                <div class="task">
+                    <el-card>
+                        <el-button type="primary" size="mini" style="font-size: 14px;">当前任务详情:</el-button>
+                        <el-descriptions column="3">
+                            <el-descriptions-item label="开始时间" :label-style="{fontWeight: 'bold'}">{{
+                                current_task_info.start_time }}
+                            </el-descriptions-item>
+                            <el-descriptions-item label="结束时间" :label-style="{fontWeight: 'bold'}">{{
+                                current_task_info.end_time }}
+                            </el-descriptions-item>
+                            <el-descriptions-item label="设备序列号" :label-style="{fontWeight: 'bold'}">{{
+                                current_task_info.serialno }}
+                            </el-descriptions-item>
+                            <el-descriptions-item label="平台" :label-style="{fontWeight: 'bold'}">{{
+                                current_task_info.platform }}
+                            </el-descriptions-item>
+                            <el-descriptions-item label="测试应用" :label-style="{fontWeight: 'bold'}">{{
+                                current_task_info.package }}
+                            </el-descriptions-item>
+                            <el-descriptions-item label="执行状态" :label-style="{fontWeight: 'bold'}">
+                          <span v-if="current_task_info.status == '0'">
+                            <el-button type="info" size="mini">
+                              未执行
+                            </el-button>
+                              <el-button type="danger" size="mini" @click="delete_task">
+								删除任务
+							  </el-button>
+                          </span>
+                                <span v-if="current_task_info.status == '1'">
+                            <el-button type="primary" size="mini">
+                              执行中
+                            </el-button>
+
+							<el-button type="danger" size="mini" @click="stop_task">
+								停止任务
+							  </el-button>
+                          </span>
+                                <span v-if="current_task_info.status == '2'">
+                            <el-button type="success" size="mini">
+                              执行完成
+                            </el-button>
+							<el-button type="danger" size="mini" @click="delete_task">
+								删除任务
+							  </el-button>
+                          </span>
+                                <span v-if="current_task_info.status == '-1'">
+                            <el-button type="danger" size="mini">
+                              执行失败
+                            </el-button>
+							<el-button type="danger" size="mini" @click="delete_task">
+								删除任务
+							  </el-button>
+                          </span>
+                            </el-descriptions-item>
+                        </el-descriptions>
+                    </el-card>
+                    <br/>
+                    <br/>
+                </div>
+                <div class="report">
+                    <div class="sticky-header">
+                        <el-card>
+                            <el-carousel :autoplay="false" :initial-index="parseInt(imgs.length/2)"
+                                         :key="current_click_time_for_mountout" :loop="false"
+                                         arrow="never" height="16rem" indicator-position="none" type="card">
+                                <el-carousel-item :key="item.time" style="text-align: center;" v-for="item in imgs">
+                                    <!-- <img :src="item.picture_path" alt="" style="object-fit: contain;"> -->
+                                    <el-image
+                                            :preview-src-list="item.relative_time == current_click_time_for_mountout ? [item.picture_path]: []"
+                                            :src="item.picture_path"
+                                            @click="clickImg(item)"
+                                            fit="cover"
+                                            style="height: 100%;"
+                                    >
+                                        <div class="image-slot" slot="error" style="text-align: center;">
+                                            当前秒暂无图片
+                                            <i class="el-icon-picture-outline"></i>
+                                        </div>
+                                    </el-image>
+                                </el-carousel-item>
+                            </el-carousel>
+                        </el-card>
+
+                    </div>
+                    <br/>
+                    <div class="chartdiv" style="min-height: 18.75rem;">
+                        <el-card style="min-height: 18.75rem;">
+                            <el-switch
+                                    v-model="is_load_img"
+                                    active-text="实时显示屏幕"
+                                    inactive-text="">
+                            </el-switch>
+                            <br/>
+                            <div v-for="typeItem in monitorTypes">
+                                <div>
+                                    <hr/>
+                                    <el-descriptions column="3">
+                                        <el-descriptions-item label="最大值" :label-style="{fontWeight: 'bold'}"
+                                                              v-if="typeItem !== 'cpu' && typeItem !== 'network'">
+                                            {{allReportData[typeItem] ? allReportData[typeItem].max: 0}}
+                                        </el-descriptions-item>
+                                        <el-descriptions-item label="最小值" :label-style="{fontWeight: 'bold'}"
+                                                              v-if="typeItem !== 'cpu' && typeItem !== 'network'">
+                                            {{allReportData[typeItem]? allReportData[typeItem].min: 0}}
+                                        </el-descriptions-item>
+                                        <el-descriptions-item label="平均值" :label-style="{fontWeight: 'bold'}"
+                                                              v-if="typeItem !== 'cpu' && typeItem !== 'network'">
+                                            {{allReportData[typeItem]? allReportData[typeItem].avg: 0}}
+                                        </el-descriptions-item>
+
+                                        <el-descriptions-item label="top获取cpu最大值" :label-style="{fontWeight: 'bold'}"
+                                                              v-if="typeItem === 'cpu'">
+                                            {{allReportData[typeItem] ? allReportData[typeItem].max: 0}}
+                                        </el-descriptions-item>
+                                        <el-descriptions-item label="top获取cpu平均值" :label-style="{fontWeight: 'bold'}"
+                                                              v-if="typeItem === 'cpu'">
+                                            {{allReportData[typeItem]? allReportData[typeItem].avg: 0}}
+                                        </el-descriptions-item>
+
+                                        <el-descriptions-item label="procstat获取应用cpu最大值"
+                                                              :label-style="{fontWeight: 'bold'}"
+                                                              v-if="typeItem === 'cpu'">
+                                            {{allReportData[typeItem] ? allReportData[typeItem].proc_app_cpu_max: 0}}
+                                        </el-descriptions-item>
+                                        <el-descriptions-item label="procstat获取应用cpu平均值"
+                                                              :label-style="{fontWeight: 'bold'}"
+                                                              v-if="typeItem === 'cpu'">
+                                            {{allReportData[typeItem]? allReportData[typeItem].proc_app_cpu_avg: 0}}
+                                        </el-descriptions-item>
+
+                                        <el-descriptions-item label="procstat获取系统cpu最大值"
+                                                              :label-style="{fontWeight: 'bold'}"
+                                                              v-if="typeItem === 'cpu'">
+                                            {{allReportData[typeItem] ? allReportData[typeItem].proc_sys_cpu_max: 0}}
+                                        </el-descriptions-item>
+                                        <el-descriptions-item label="procstat获取系统cpu平均值"
+                                                              :label-style="{fontWeight: 'bold'}"
+                                                              v-if="typeItem === 'cpu'">
+                                            {{allReportData[typeItem]? allReportData[typeItem].proc_sys_cpu_avg: 0}}
+                                        </el-descriptions-item>
+
+                                        <el-descriptions-item label="累计消耗流量" :label-style="{fontWeight: 'bold'}"
+                                                              v-if="typeItem === 'network'">
+                                            {{allReportData[typeItem]? allReportData[typeItem].sum_accumFlow_sum: 0}}
+                                        </el-descriptions-item>
+
+                                        <el-descriptions-item label="卡顿数" :label-style="{fontWeight: 'bold'}"
+                                                              v-if="typeItem === 'fps'">
+                                            {{allReportData[typeItem] ? allReportData[typeItem].jank_number_sum: 0}}
+                                        </el-descriptions-item>
+                                        <el-descriptions-item label="强卡顿数" :label-style="{fontWeight: 'bold'}"
+                                                              v-if="typeItem === 'fps'">
+                                            {{allReportData[typeItem]? allReportData[typeItem].big_jank_number_sum: 0}}
+                                        </el-descriptions-item>
+                                        <el-descriptions-item label="总卡顿率" :label-style="{fontWeight: 'bold'}"
+                                                              v-if="typeItem === 'fps'">
+                                            {{allReportData[typeItem]? allReportData[typeItem].all_jank_rate: 0}} %
+                                        </el-descriptions-item>
+
+                                    </el-descriptions>
+                                </div>
+                                <div :id="typeItem" :key="typeItem" class="chartitem"
+                                     style=" width: 100%;height: 18.75rem;">
+                                </div>
+                            </div>
+                        </el-card>
+                    </div>
+                </div>
+            </el-main>
+        </el-container>
+    </el-container>
+    <el-dialog
+            title="修改登录信息"
+            :visible.sync="dialogVisible"
+            width="30%"
+    >
+        <el-input placeholder="请输入需要切换的token" v-model="newToken">
+        </el-input>
+        <span slot="footer" class="dialog-footer">
+
+				<el-button @click="dialogVisible = false">取 消</el-button>
+				<el-button type="primary" @click="setToken">修 改</el-button>
+			</span>
+    </el-dialog>
+    <el-dialog
+            title="创建性能测试任务"
+            :visible.sync="createtaskdialogVisible"
+            width="80%"
+            :before-close="createtaskbeforeclose"
+    >
+        <el-radio-group @change="get_local_device_packages" v-model="selectediphone"
+                        style="display: flex;flex-direction: row;flex-flow: wrap;">
+            <div v-for="(phone , index) in phoneList" :key="index">
+                <el-radio :label="phone" :key="phone" style="margin: 10px;">
+                    <div class="phone-card">
+                        <img class="phone-img" src="iphone.png" style="cursor:pointer"/>
+                        <div class="phone-details">
+                            <div class="phone-name">{{ phone.serialno }}</div>
+                            <div class="phone-info">
+                                <span>平台: {{ phone.platform }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </el-radio>
+            </div>
+        </el-radio-group>
+        <h3 v-show="phoneList.length <= 0">暂未检测到设备,请打开设备开发者模式,windows连接IOS设备需要下载iTunes</h3>
+        <div style="margin-top: 30px;">
+            选择app：
+            <el-select :disableed="chosedisable" @change="get_local_device_packages_version" filterable
+                       placeholder="请选择" v-model="package">
+                <el-option
+                        :key="item.package"
+                        :label="item.name"
+                        :value="item.package"
+                        v-for="item in packages">
+                </el-option>
+            </el-select>
+            版本号： {{version}}
+        </div>
+        <span slot="footer" class="dialog-footer">
+				<el-button @click="createtaskdialogVisible = false">取 消</el-button>
+				<el-button type="primary" @click="start_task">创 建</el-button>
+			</span>
+    </el-dialog>
+</div>
+
+<script>
+        new Vue({
+			el: '#app',
+			data: function() {
+				return {
+					createtaskdialogVisible: false,
+					dialogVisible: false,
+					newToken:"",
+          			time: 0,
+					// is_show_end_pic: false,
+					current_task_info: {},
+					chosedisable: false,
+					tasklist:[],
+					version:"",
+					packages: [],
+					package: "",
+					selectediphone: {},
+					phoneList: [
+
+					],
+//////////////////////////////////////////////////////////// 上面是任务，下面是报告
+					is_load_img: false,
+          			imgs:[], //展示图片的容器
+					taskid: 1,
+					loading:true,
+					slidesPerView: 5, //默认显示图片的张数
+					realmonitorTypes:[], //真实的需要展示的图标
+					isneedreportlog: false,
+					allReportData: {}, //所有的结果集，自己查
+					current_click_time_for_mountout: null, //被点击的时间00:00,所有的图标使用相同的时间。
+					current_click_time_for_mountout_time: null, //被点击的真实时间
+					monitorTypes:  ["cpu", "memory", "fps", "gpu", "devicebatterylevel", "devicebatterytemperature", "network"],
+					ios_packages_info: [],
+					chartsMap:{
+						//chats对象的数据集
+						// "cpu": null,
+						// "fps": null,
+						// "memory": null,
+						// "gpu": null,
+					},
+					chartOption:{
+						title: {
+						text: "",
+						textStyle:{
+							fontSize:24,
+						}
+						},
+						grid: {
+						left: '10%', // 左边距
+							right: '5%', // 右边距
+							top: '18%', // 上边距
+							bottom: '24%', // 下边距
+						},
+						animation: false,
+						tooltip: {
+						trigger: "axis",
+						axisPointer: {
+							type: "shadow",
+						},
+						},
+						xAxis: {
+						data: null // x 坐标
+						},
+						yAxis: {
+						type: 'value',
+						axisLabel: {
+							formatter: '{value}'
+						},
+						},
+						toolbox: {
+						show: false,
+						},
+						brush: {
+						xAxisIndex: "all",
+						brushLink: "all",
+						brushStyle: {
+							borderWidth: 3,
+							color: 'rgba(255,36,36,0.2)',
+							borderColor: '#ff2424'
+						}
+						},
+						series: {
+						markArea:{},
+						type: "line",
+						clickable: true,
+						symbol: 'circle',
+						data: null, //y轴的值
+						lineStyle: {
+							width: 0.5,
+						},
+            connectNulls: true,
+						showSymbol: false,//是否默认展示圆点
+						},
+            dataZoom:[
+              {
+                  type:"slider",//slider表示有滑动块的，
+                  show:true,
+                  xAxisIndex:[0],//表示x轴折叠
+                  start:0,//数据窗口范围的起始百分比,表示1%
+                  end:100//数据窗口范围的结束百分比,表示35%坐标
+              },
+            ]
+					}
+				}
+			},
+			async mounted() {
+				this.openLoading()
+        await this.get_username()
+				await this.get_all_task()
+				if(this.tasklist && this.tasklist.length > 0){
+				    this.taskid = this.tasklist[0].id
+					await this.clicktask(this.tasklist[0].id)
+				}
+				this.time = setInterval(() => {
+					console.log("获取当前任务状态并刷新图表")
+					this.get_task_status()
+					if (this.current_task_info.status == 1) {
+						console.log("join")
+						this.clicktask(this.taskid);
+						this.chosedisable = true
+					}else{
+						this.chosedisable = false
+
+					}
+				}, 3000);
+				// 每 3 秒执行一次
+				this.time_device = setInterval(() => {
+				    if (this.current_task_info.status != 1) {
+					   this.get_local_device()
+                        if(this.selectediphone){
+                          this.get_local_device_packages()
+                        }
+                    }
+				}, 8000);
+				await this.getReportData()
+				this.closeLoading()
+				if(this.tasklist && this.tasklist.length > 0){
+				    this.clearNoDataType()
+				}else{
+                    this.$message({
+                      message: '点击“创建新的性能测试任务”按钮即可开始创建任务',
+                      type: 'success'
+                    });
+				}
+				if (!this.allReportData.public_imgs || this.allReportData.public_imgs.length == 0 || this.allReportData.public_imgs.length == undefined) {
+					return
+				}
+				if(this.allReportData.public_imgs){
+				   for(let i = parseInt(this.allReportData.public_imgs.length / 2); i < this.allReportData.public_imgs.length; i++){
+				       if(this.allReportData.public_imgs[i].picture_path){
+                            this.current_click_time_for_mountout = this.allReportData.public_imgs[i].relative_time
+                            this.current_click_time_for_mountout_time = this.allReportData.public_imgs[i].time
+                            break;
+				       }
+				   }
+				}
+				//this.current_click_time_for_mountout = this.allReportData.public_imgs? this.allReportData.public_imgs[parseInt(this.allReportData.public_imgs.length / 2)].relative_time : null
+				//this.current_click_time_for_mountout_time = this.allReportData.public_imgs? this.allReportData.public_imgs[parseInt(this.allReportData.public_imgs.length / 2)].time : null
+				this.setAllBrush()
+			},
+          beforeDestroy() {
+            clearInterval(this.time)
+            clearInterval(this.time_device)
+          },
+	methods: {
+		createtaskbeforeclose(){
+			this.$confirm('确认关闭？')
+			.then(_ => {
+				this.createtaskdialogVisible = false
+			})
+			.catch(_ => {});
+		},
+        async get_username(){
+          if (localStorage.getItem("username")){
+              return
+          }
+          const res = await axios({method: 'get',//提交方法
+							url: '/get_username/'//提交地址
+					})
+          localStorage.setItem("username", res.data)
+        },
+		setToken(){
+			localStorage.setItem('username', this.newToken)
+			this.$message({
+			  showClose: true,
+              message: '切换成功，请重新启动sdk，重新输入唯一标识！',
+              type: 'success'
+            });
+			this.dialogVisible = false;
+		},
+		myToken(val){
+			if(val === "myinfo"){
+				this.$alert(localStorage.getItem("username"), '我的唯一标识', {
+				confirmButtonText: '确定',
+				});
+			}else{
+				this.dialogVisible = true
+			}
+
+		},
+        openLoading() {
+            const loading = this.$loading({
+              lock: true,
+              text: 'Loading',
+              spinner: 'el-icon-loading',
+              background: 'rgba(0, 0, 0, 0.7)'
+            });
+          },
+		  async downloadsdk() {
+			try {
+			const response = await axios.get('/get_sdk', {
+				responseType: 'blob', headers: {'username': localStorage.getItem("username")},
+			});
+
+			const url = window.URL.createObjectURL(new Blob([response.data]));
+			const link = document.createElement('a');
+			link.href = url;
+			link.setAttribute('download', 'sdk.zip');
+			document.body.appendChild(link);
+			link.click();
+			link.remove();
+			} catch (error) {
+			console.error('下载失败:', error);
+			}
+
+
+			},
+        closeLoading() {
+          this.$loading().close();
+        },
+				async getReportData(){
+						await this.reportDataRecord().then(x=>{
+						this.allReportData = x.data.result
+						console.log("this.allReportData", this.allReportData)
+						this.monitorTypes.forEach(t=>{
+							try{
+								this.createChart(t)
+							}catch(e){
+								console.error(e)
+							}
+						})
+						this.addEvenClickForAllChart()
+					})
+				},
+				clearNoDataType(){
+					console.log("清除没有的图表")
+					let showPicName= []
+					let notShowPicName = []
+					this.monitorTypes.forEach(e=>{
+						if(this.allReportData[e]){
+							showPicName.push(e)
+						} else{
+							if(e === 'devicebatterylevel'){
+								notShowPicName.push('电池电量')
+								showPicName.push(e)
+							}else if(e === 'devicebatterytemperature'){
+								notShowPicName.push('电池温度')
+								showPicName.push(e)
+              }else if(e === 'network'){
+                notShowPicName.push('流量')
+								showPicName.push(e)
+							}else{
+								notShowPicName.push(e)
+								showPicName.push(e)
+							}
+						}
+					})
+					this.monitorTypes = showPicName
+					if(notShowPicName.length > 0){
+					this.$message.error(notShowPicName.toString() + '暂无数据', 2000);
+					}
+				},
+				clickImg(item){
+					this.allReportData.public_imgs.forEach(e=>{
+						if(e.relative_time === item.relative_time){
+							this.current_click_time_for_mountout = e.relative_time
+							this.current_click_time_for_mountout_time = e.time
+						}
+					})
+					this.setAllBrush()
+				},
+				//创建chart如果之前有chart就把之前的销毁
+				createChart(chartName){
+					let itemChart = this.chartsMap[chartName]
+					if (itemChart){
+						itemChart.dispose()
+					}
+
+					let currentChartDiv = document.getElementById(chartName);
+					let nowChart = echarts.init(currentChartDiv);
+					this.chartsMap[chartName] = nowChart
+					this.setChartOptionRes(chartName, nowChart)
+					return nowChart
+				},
+				setChartOptionRes(chartName, nowChart){
+					this.chartOption.title.text = chartName.replace("devicebatterylevel", "电池电量")
+															.replace("devicebatterytemperature", "电池温度")
+															.replace("cpu","CPU")
+															.replace("memory","MEMORY")
+															.replace("gpu","GPU")
+															.replace("fps","FPS")
+															.replace("network", "流量")
+					this.chartOption.xAxis.data = this.allReportData[chartName].relative_time
+					this.chartOption.xAxis.realtime = this.allReportData[chartName].time
+					this.chartOption.yAxis.axisLabel.formatter = '{value}' +  this.findunit(chartName)
+          if(chartName == "network" && this.allReportData[chartName]){
+            let alldata = []
+            for(let data of 
+              [
+                {"data": this.allReportData[chartName].sum_accumFlow, "name": "累计总流量"}, {"data": this.allReportData[chartName].accumulate_downFlow, "name": "累计下载流量"}, {"data": this.allReportData[chartName].accumulate_upFlow, "name": "累计上传流量"}, {"data": this.allReportData[chartName].sum_realtimeFlow, "name": "实时总流量"}, {"data": this.allReportData[chartName].realtime_downFlow, "name": "实时下载流量"}, {"data": this.allReportData[chartName].realtime_upFlow, "name": "实时上传流量"}
+              ]
+              ){
+              let obj = JSON.parse(JSON.stringify(this.chartOption.series)) 
+              obj.data = data["data"]
+              obj.name = data["name"]
+              alldata.push(obj)
+              console.log(JSON.stringify(obj))
+            }
+            let tmpchart = JSON.parse(JSON.stringify(this.chartOption)) 
+            tmpchart.series = alldata
+            tmpchart.legend = {show: true}
+            nowChart.setOption(tmpchart)
+          }else if(chartName == "cpu"){
+            let alldata = []
+            for(let data of 
+              [
+                {"data": this.allReportData[chartName].value, "name": "top获取cpu( 多核cpu累计总值 )"}, {"data": this.allReportData[chartName].proc_app_cpu, "name": "proc-stat获取的应用cpu( perfdog-应用cpu统计方式 )"}, {"data": this.allReportData[chartName].proc_sys_cpu, "name": "proc-stat获取的系统总cpu( perfdog-系统cpu总值 )"}
+             ]
+              ){
+              let obj = JSON.parse(JSON.stringify(this.chartOption.series)) 
+              obj.data = data["data"]
+              obj.name = data["name"]
+              alldata.push(obj)
+              console.log(JSON.stringify(obj))
+            }
+            let tmpchart = JSON.parse(JSON.stringify(this.chartOption)) 
+            tmpchart.series = alldata
+            tmpchart.legend = {show: true}
+            nowChart.setOption(tmpchart)
+          }else{
+            this.chartOption.series.data = this.allReportData[chartName].value
+            nowChart.setOption(this.chartOption)
+          }
+					return nowChart
+				},
+				findunit(chartName){
+						const units = {
+						"cpu": "%",
+						"gpu": "%",
+						"fps": "帧",
+						"memory": "M",
+						"devicebatterylevel": "%",
+						"devicebatterytemperature": "℃",
+            "network": "KB"
+					};
+					return units[chartName] || ""; // 如果没有找到对应的单位，返回一个空字符串
+				},
+				addEvenClickForAllChart(){
+					for(const key in this.chartsMap){
+						let myChart = this.chartsMap[key]
+						myChart.getZr().on("click", (params) => {
+						const pointInPixel = [params.offsetX, params.offsetY];
+						if (myChart.containPixel("grid", pointInPixel)) {
+							let xIndex = myChart.convertFromPixel({ seriesIndex: 0 }, [
+							params.offsetX,
+							params.offsetY,
+							])[0];
+							let current_key = this.allReportData[key].relative_time[xIndex];
+							this.current_click_time_for_mountout = current_key;
+							this.current_click_time_for_mountout_time = parseInt(this.allReportData[key].time[xIndex]);
+							console.log(key, xIndex, this.current_click_time_for_mountout_time, this.current_click_time_for_mountout, "current_click_time_for_mountout_time")
+							this.setAllBrush()
+						}
+						});
+					}
+				},
+				setAllBrush(){
+					for(const key in this.chartsMap){
+						this.setBrush(this.chartsMap[key])
+					}
+					if(this.allReportData.public_imgs){
+						let itemImgInstance = null
+						let choseIndex = 0
+						for(let i = 0; i < this.allReportData.public_imgs.length; i++){
+							if(this.allReportData.public_imgs[i].time === this.current_click_time_for_mountout_time){
+								itemImgInstance = this.allReportData.public_imgs[i]
+								choseIndex = i
+								break
+							}else if(this.allReportData.public_imgs[i].time > this.current_click_time_for_mountout_time){
+								// this.$message('当前时间点无图片，展示附近几张图片');
+								itemImgInstance = this.allReportData.public_imgs[i]
+								choseIndex = i
+								break
+							}
+						}
+						if (itemImgInstance){
+							this.imgs = []
+							this.loadImg(choseIndex)
+						}
+					}
+				},
+				setBrush (myChart) {
+					myChart.dispatchAction({
+						type: "brush",
+						areas: [
+						{
+							brushType: "lineX",
+							coordRange: [
+							this.current_click_time_for_mountout,
+							this.current_click_time_for_mountout,
+							],
+							xAxisIndex: 0,
+							transformable: false,
+						},
+						],
+					});
+				},
+				loadImg(choseIndex){
+					for(let i = choseIndex - 1; i >= 0; i--){
+						if(this.allReportData.public_imgs[i].picture_path){
+							this.imgs.push(this.allReportData.public_imgs[i])
+							break
+						}
+					}
+					this.imgs.push(this.allReportData.public_imgs[choseIndex])
+					for(let i = choseIndex + 1; i < this.allReportData.public_imgs.length; i++){
+						if(this.allReportData.public_imgs[i].picture_path){
+							this.imgs.push(this.allReportData.public_imgs[i])
+							break
+						}
+					}
+				},
+				async loadImgwidthHeight(picture_path) {
+					const img = new Image();
+					img.src = picture_path;
+
+					await new Promise((resolve, reject) => {
+					img.onload = () => {
+						const width = img.width;
+						const height = img.height;
+						const aspectRatio = width / height;
+						// console.log("width", img.width, img.height)
+						// 比较宽高比
+						if (aspectRatio > 1) {
+						this.slidesPerView = 5;
+						} else if (aspectRatio < 1) {
+						// console.log("aspectRatio", aspectRatio);
+						this.slidesPerView = 7;
+						} else {
+						this.slidesPerView = 5;
+						}
+						resolve();
+					};
+
+					img.onerror = () => {
+						reject();
+					};
+					});
+				},
+				async reportDataRecord(){
+					const res = await axios({method: 'get',//提交方法
+							url: '/result/',//提交地址
+							params: {"id": this.taskid},
+              headers: {"username": localStorage.getItem("username")}
+						})
+					return res
+				},
+        async get_local_device(){
+          const res = await axios({method: 'get',//提交方法
+							url: '/get_local_device/',//提交地址
+              headers: {"username": localStorage.getItem("username")}
+					})
+          const res_ios = await axios({method: 'get',//提交方法
+							url: '/get_local_device_ios/',//提交地址
+              headers: {"username": localStorage.getItem("username")}
+					})
+          if(res.data.code != 500){
+            this.phoneList = res.data
+          }else{
+            this.phoneList = []
+          }
+          if(res_ios.data.code != 500){
+            this.phoneList = this.phoneList.concat(res_ios.data)
+          }
+		  this.phoneList.forEach(x=>{
+			if(x.serialno == this.selectediphone.serialno){
+				this.selectediphone = x
+			}
+		  })
+          console.log("phone:", this.phoneList)
+        },
+        async get_local_device_packages(){
+			console.log(this.selectediphone)
+          if(this.selectediphone.platform == "android"){
+                const res = await axios({method: 'post',//提交方法
+							url: '/get_local_device_packages/',//提交地址
+              data: {"serialno": this.selectediphone.serialno, "platform": this.selectediphone.platform}, //data
+              headers: {"username": localStorage.getItem("username")}
+					})
+              console.log(res)
+              this.packages = res.data
+          }else if(this.selectediphone.platform == "ios"){
+               const res = await axios({method: 'post',//提交方法
+							url: '/get_local_device_packages_ios/',//提交地址
+              data: {"serialno": this.selectediphone.serialno, "platform": this.selectediphone.platform}, //data
+              headers: {"username": localStorage.getItem("username")}
+					})
+              console.log(res)
+              this.ios_packages_info = res.data
+              this.packages = res.data
+          }
+        },
+        async get_local_device_packages_version(){
+          if(this.selectediphone.platform == "android"){
+              const res = await axios({method: 'post',//提交方法
+                                url: '/get_local_device_packages_version/',//提交地址
+                  data: {"serialno": this.selectediphone.serialno, "package": this.package, "platform": this.selectediphone.platform}, //data
+                  headers: {"username": localStorage.getItem("username")}
+                        })
+              console.log(res)
+              this.version = res.data
+            }else if(this.selectediphone.platform == "ios"){
+                this.ios_packages_info.forEach(e=>{
+                    if(e.package == this.package){
+                        this.version = e.version
+                    }
+                })
+            }
+        },
+        async get_all_task(){
+          const res = await axios({method: 'get',//提交方法
+							url: '/get_all_task/',//提交地址
+              headers: {"username": localStorage.getItem("username")}
+					})
+          console.log(res)
+          this.tasklist = res.data
+        },
+        async changeclicktask(id){
+            await this.clicktask(id)
+            if(this.allReportData.public_imgs){
+				   for(let i = parseInt(this.allReportData.public_imgs.length / 2); i < this.allReportData.public_imgs.length; i++){
+				       if(this.allReportData.public_imgs[i].picture_path){
+                            this.current_click_time_for_mountout = this.allReportData.public_imgs[i].relative_time
+                            this.current_click_time_for_mountout_time = this.allReportData.public_imgs[i].time
+                            break;
+				       }
+				   }
+				}
+			this.setAllBrush()
+        },
+        async clicktask(id){
+          this.taskid = id
+          console.log(this.taskid, "--------------------")
+		  await this.get_task_status()
+		  if(this.current_task_info.status == 1){
+			this.chosedisable = true
+			this.package = this.current_task_info.package
+			this.selectediphone.serialno = this.current_task_info.serialno
+			this.selectediphone.name = this.current_task_info.name
+			this.selectediphone.version = this.current_task_info.version
+			this.selectediphone.platform = this.current_task_info.platform
+		  }
+          await this.getReportData()
+          if (!this.allReportData.public_imgs || this.allReportData.public_imgs.length == 0 || this.allReportData.public_imgs.length == undefined) {
+            return
+          }
+		  if(!this.current_click_time_for_mountout){
+			this.current_click_time_for_mountout = this.allReportData.public_imgs? this.allReportData.public_imgs[parseInt(this.allReportData.public_imgs.length / 2)].relative_time : null
+		  }
+		  if(!this.current_click_time_for_mountout_time){
+			this.current_click_time_for_mountout_time = this.allReportData.public_imgs? this.allReportData.public_imgs[parseInt(this.allReportData.public_imgs.length / 2)].time : null
+		  }
+		  if(this.is_load_img){
+			this.current_click_time_for_mountout = this.allReportData.public_imgs[this.allReportData.public_imgs.length -1].relative_time
+			this.current_click_time_for_mountout_time = this.allReportData.public_imgs[this.allReportData.public_imgs.length -1].time
+		  }
+          this.setAllBrush()
+        },
+        async get_task_status(){
+          const res = await axios({method: 'get',//提交方法
+							url: '/get_task_status/',//提交地址
+							params: {"id": this.taskid} ,
+              headers: {"username": localStorage.getItem("username")}
+					})
+		  this.current_task_info = res.data
+          return res
+        },
+        async run_task(){
+          const res = await axios({method: 'post',//提交方法
+							url: '/run_task/',//提交地址
+							data: {"serialno": this.selectediphone.serialno, "package": this.package, "port": 5037, "platform": this.selectediphone.platform}, //data
+              headers: {"username": localStorage.getItem("username")}
+					})
+          return res
+        },
+        async stop_task(){
+          const res = await axios({method: 'get',//提交方法
+							url: '/stop_task/',//提交地址
+							params: {"id": this.taskid} ,
+              headers: {"username": localStorage.getItem("username")}
+					})
+          if(res.data && res.data.code === 200){
+            this.$message({
+              message: '任务停止成功',
+              type: 'success'
+            });
+          }
+          return res
+        },
+		async delete_task(){
+			this.$confirm('是否确认删除？此操作为物理删除数据将彻底消失。')
+				.then(async _ => {
+					const res = await axios({
+						method: 'get', //提交方法
+						url: '/delete_task/', //提交地址
+						params: { "id": this.taskid },
+						headers: { "username": localStorage.getItem("username") }
+					})
+
+				if (res.data && res.data.code === 200) {
+					this.$message({
+						message: '任务删除成功',
+						type: 'success'
+					});
+					setTimeout(() => {
+							location.reload()
+					}, 1000);
+				}
+				return res;
+			})
+			.catch(_ => {});
+		},
+        async start_task(){
+          if(!this.selectediphone){
+            this.$message.error("未选择设备", 2000);
+            return
+          }
+          if(!this.package){
+            this.$message.error("未选择安装包", 2000);
+            return
+          }
+          res = await this.run_task()
+          if(res.data && res.data.code == 200){
+            this.$message({
+              message: '任务启动成功',
+              type: 'success'
+            });
+			this.taskid = res.data.taskid
+			this.openLoading()
+			this.package = "" 
+			setTimeout(() => {
+				location.reload()
+			}, 3000);
+			this.createtaskdialogVisible = false
+          }else{
+			this.$message({
+              message: res.data,
+            });
+		  }
+        },
+			}
+		})
+
+
+
+
+
+
+
+
+
+
+
+</script>
+</body>
+</html>
