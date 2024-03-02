@@ -4,12 +4,13 @@ import os
 import time
 import traceback
 from builtins import *
-import datetime
 import adbutils
 from multiprocessing.context import Process
 from performancetest.web.dao import connect, Task
 from logzero import logger
-from android_tool import perf
+from android_tool import perf as android_perf
+from pc_tool import perf as pc_perf
+
 
 
 class TaskHandle(Process):
@@ -51,40 +52,28 @@ class TaskHandle(Process):
                     current_task_running.status = -1
                     session.flush()
                     session.commit()
-                    raise Exception("任务启动失败")
+                    raise Exception("缺少设备{0}任务启动失败".format(self.serialno))
                 time.sleep(0.1)
-                asyncio.run(perf(device, self.package, self.save_dir))
-            # elif self.device_platform == "ios":
-            #     try:
-            #         G.device = IosDevice(serialno=self.serialno, device_addr=self.server_addr,
-            #                              package=self.package, save_dir=self.save_dir)
-            #         G.device.start_app()
-            #     except:
-            #         traceback.print_exc()
-            #         current_task_running.status = -1
-            #         current_task_running.end_time = datetime.datetime.now()
-            #         session.flush()
-            #         session.commit()
-            #         raise Exception("任务启动失败")
-            #     IosPerfMonitor(save_dir=self.save_dir, G=G).start()
-            #     IosSibSnapshotMonitor(os.path.join(self.save_dir, "picture_log"), G.device, self.package).start()
+                asyncio.run(android_perf(device, self.package, self.save_dir))
+            elif self.device_platform == "ios":
+                raise Exception("ios 设备暂不支持，因为目前ios17以上性能获取和操作需要造一些轮子，所有暂缓实现")
+            elif self.device_platform == "pc":
+                asyncio.run(pc_perf(self.package, self.save_dir))
 
     def stop(self):
-        # G.stop_event.clear()
         pass
 
     def suspend(self):
-        # G.suspend_event.clear()
         pass
 
 
 if __name__ == '__main__':
-    task_process = TaskHandle(serialno="emulator-5554", server_addr=["localhost", 5037],
-                              package="com.sankuai.meituan.merchant", save_dir="localhost", task_id=1,
-                              device_platform="android")
-    task_process.start()
-    time.sleep(2 * 10)
-    # task_process = TaskHandle(serialno="00008110-0012148E1E8B801E", server_addr=["10.131.129.128", 9123],
-    #                           package="com.netease.id5", save_dir="localhost", task_id=1, device_platform="ios")
+    # task_process = TaskHandle(serialno="emulator-5554", server_addr=["localhost", 5037],
+    #                           package="com.sankuai.meituan.merchant", save_dir="localhost", task_id=1,
+    #                           device_platform="android")
     # task_process.start()
     # time.sleep(2 * 10)
+    task_process = TaskHandle(serialno=None, server_addr=None,
+                              package="6728", save_dir="localhost", task_id=1, device_platform="pc")
+    task_process.start()
+    time.sleep(2 * 10)

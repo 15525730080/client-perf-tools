@@ -60,8 +60,9 @@ class WinFps(object):
         return complete_fps
 
     def start_fps_collect(self, pid):
+        start_fps_collect_time = int(time.time())
         res_terminate = subprocess.Popen(
-            ["PresentMon.exe", "-process_id", pid, "-output_stdout", "-stop_existing_session"],
+            ["PresentMon.exe", "-process_id", str(pid), "-output_stdout", "-stop_existing_session"],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         WinFps.fps_process = res_terminate
         res_terminate.stdout.readline()
@@ -76,7 +77,8 @@ class WinFps(object):
             try:
                 line = line.decode(encoding="utf-8")
                 line_list = line.split(",")
-                logger.info(line_list)
+                print("line ", line_list)
+                WinFps.frame_que.append(start_fps_collect_time + round(float(line_list[7]), 7))
             except:
                 time.sleep(1)
                 traceback.print_exc()
@@ -92,7 +94,7 @@ async def sys_info():
         print_json(res)
         return res
 
-    return await asyncio.run(asyncio.to_thread(real_func))
+    return await asyncio.wait_for(asyncio.to_thread(real_func), timeout=10)
 
 
 async def pids():
@@ -109,7 +111,7 @@ async def pids():
         print_json(process_list)
         return process_list
 
-    return await asyncio.run(asyncio.to_thread(real_func))
+    return await asyncio.wait_for(asyncio.to_thread(real_func), timeout=10)
 
 
 async def screenshot(pid, save_dir):
@@ -143,22 +145,21 @@ async def screenshot(pid, save_dir):
                 screenshot = ImageGrab.grab(all_screens=True)
             screenshot.save(screenshot_dir.joinpath(str(start_time) + ".png"), format="PNG")
 
-    return await asyncio.run(asyncio.to_thread(real_func, (pid, save_dir)))
+    return await asyncio.wait_for(asyncio.to_thread(real_func, pid, save_dir), timeout=10)
 
 
 async def cpu(pid):
     def real_func(pid):
         start_time = int(time.time())
         proc = psutil.Process(pid=int(pid))
-        cpu_time = proc.cpu_times()
         cpu_usage = proc.cpu_percent(interval=1)
         cpu_count = psutil.cpu_count()
-        res = {"cpu_usage": cpu_usage / cpu_count, "cpu_usage_all": cpu_usage, "cpu_time": cpu_time,
+        res = {"cpu_usage": cpu_usage / cpu_count, "cpu_usage_all": cpu_usage,
                "cpu_core_num": cpu_count, "time": start_time}
         print_json(res)
         return res
 
-    return await asyncio.run(asyncio.to_thread(real_func, (pid,)))
+    return await asyncio.wait_for(asyncio.to_thread(real_func, pid), timeout=10)
 
 
 async def memory(pid):
@@ -175,12 +176,12 @@ async def memory(pid):
         print_json(memory_info)
         return memory_info
 
-    return await asyncio.run(asyncio.to_thread(real_func, (pid,)))
+    return await asyncio.wait_for(asyncio.to_thread(real_func, pid), timeout=10)
 
 
 async def fps(pid):
-    frames = await WinFps(pid).fps()
-    res = {"type": "fps", "fps": len(frames), "frames": frames, "time": int(frames[0])}
+    frames = WinFps(pid).fps()
+    res = {"type": "fps", "fps": len(frames), "frames": frames, "time": int(frames[0]) if frames else int(time.time())}
     print_json(res)
     return res
 
@@ -194,7 +195,7 @@ async def gpu(pid):
             deviceHandle = pynvml.nvmlDeviceGetHandleByIndex(0)  # 获取第一块GPU的句柄
             gpuUtilization = pynvml.nvmlDeviceGetUtilizationRates(deviceHandle)
             gpu_utilization_percentage = gpuUtilization.gpu  # GPU的计算使用率
-            res = {"gpu_used": gpu_utilization_percentage, "time": start_time}
+            res = {"gpu": gpu_utilization_percentage, "time": start_time}
         for i in range(device_count):
             handle = pynvml.nvmlDeviceGetHandleByIndex(i)
             processes = pynvml.nvmlDeviceGetComputeRunningProcesses(handle)
@@ -203,11 +204,11 @@ async def gpu(pid):
                 if process.pid == pid:
                     gpuUtilization = pynvml.nvmlDeviceGetUtilizationRates(deviceHandle)
                     gpu_utilization_percentage = gpuUtilization.gpu  # GPU的计算使用率
-                    res = {"gpu_used": gpu_utilization_percentage, "time": start_time}
+                    res = {"gpu": gpu_utilization_percentage, "time": start_time}
         print_json(res)
         return res
 
-    return await asyncio.run(asyncio.to_thread(real_func, (pid,)))
+    return await asyncio.wait_for(asyncio.to_thread(real_func, pid), timeout=10)
 
 
 async def process_info(pid):
@@ -215,18 +216,18 @@ async def process_info(pid):
         start_time = int(time.time())
         process = psutil.Process(int(pid))
         th_number = process.num_handles()
-        res = {"process_num_thread": th_number, "time": start_time}
+        res = {"threads": th_number, "time": start_time}
         print_json(res)
         return res
 
-    return await asyncio.run(asyncio.to_thread(real_func, (pid,)))
+    return await asyncio.wait_for(asyncio.to_thread(real_func, pid), timeout=10)
 
 
 async def perf(pid, save_dir):
     monitors = {
         "cpu": Monitor(cpu,
                        pid=pid,
-                       key_value=["time", "cpu_usage(%)", "cpu_usage_all(%)", "cpu_time", "cpu_core_num(个)"],
+                       key_value=["time", "cpu_usage(%)", "cpu_usage_all(%)", "cpu_core_num(个)"],
                        name="cpu",
                        save_dir=save_dir),
         "memory": Monitor(memory,
@@ -236,8 +237,7 @@ async def perf(pid, save_dir):
                           save_dir=save_dir),
         "process_info": Monitor(process_info,
                                 pid=pid,
-                                key_value=["time", "handle_nums(个)", "threads(个)", "voluntary_ctxt_switches(次)",
-                                           "nonvoluntary_ctxt_switches(次)"], name="package_process_info",
+                                key_value=["time", "threads(个)"], name="package_process_info",
                                 save_dir=save_dir),
         "fps": Monitor(fps,
                        pid=pid,
@@ -259,4 +259,12 @@ async def perf(pid, save_dir):
 
 
 if __name__ == '__main__':
-    asyncio.run(perf(123))
+    asyncio.run(pids())
+    # asyncio.run(perf(24200, "."))
+    # pid = 24200
+    # asyncio.run(cpu(pid))
+    # asyncio.run(memory(pid))
+    # asyncio.run(gpu(pid))
+    # asyncio.run(fps(pid))
+    # asyncio.run(process_info(pid))
+    # asyncio.run(screenshot(pid, "."))

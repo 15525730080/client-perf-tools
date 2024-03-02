@@ -58,6 +58,7 @@ class Monitor(object):
             before_func = time.time()
             param_names = inspect.signature(self.func).parameters.keys()
             params = {name: self.kwargs.get(name) for name in param_names}
+            print(params)
             res = await self.func(**params)
             if self.is_out:
                 with open(self.csv_path, "a+", encoding="utf-8", newline="") as f:
