@@ -144,6 +144,7 @@
 
 
 
+
     </style>
 </head>
 <body>
@@ -367,7 +368,7 @@
             width="80%"
             :before-close="createtaskbeforeclose"
     >
-        <el-radio-group @change="get_local_device_packages" v-model="selectediphone"
+        <el-radio-group @change="get_android_device_packages" v-model="selectediphone"
                         style="display: flex;flex-direction: row;flex-flow: wrap;">
             <div v-for="(phone , index) in phoneList" :key="index">
                 <el-radio :label="phone" :key="phone" style="margin: 10px;">
@@ -386,7 +387,7 @@
         <h3 v-show="phoneList.length <= 0">暂未检测到设备,请打开设备开发者模式,windows连接IOS设备需要下载iTunes</h3>
         <div style="margin-top: 30px;">
             选择app：
-            <el-select :disableed="chosedisable" @change="get_local_device_packages_version" filterable
+            <el-select :disableed="chosedisable" @change="get_android_device_packages_version" filterable
                        placeholder="请选择" v-model="package">
                 <el-option
                         :key="item.package"
@@ -532,9 +533,9 @@
 				// 每 3 秒执行一次
 				this.time_device = setInterval(() => {
 				    if (this.current_task_info.status != 1) {
-					   this.get_local_device()
+					   this.get_android_device()
                         if(this.selectediphone){
-                          this.get_local_device_packages()
+                          this.get_android_device_packages()
                         }
                     }
 				}, 8000);
@@ -871,13 +872,13 @@
 						})
 					return res
 				},
-        async get_local_device(){
+        async get_android_device(){
           const res = await axios({method: 'get',//提交方法
-							url: '/get_local_device/',//提交地址
+							url: '/get_android_device/',//提交地址
               headers: {"username": localStorage.getItem("username")}
 					})
           const res_ios = await axios({method: 'get',//提交方法
-							url: '/get_local_device_ios/',//提交地址
+							url: '/get_ios_device/',//提交地址
               headers: {"username": localStorage.getItem("username")}
 					})
           if(res.data.code != 500){
@@ -895,11 +896,11 @@
 		  })
           console.log("phone:", this.phoneList)
         },
-        async get_local_device_packages(){
+        async get_android_device_packages(){
 			console.log(this.selectediphone)
           if(this.selectediphone.platform == "android"){
                 const res = await axios({method: 'post',//提交方法
-							url: '/get_local_device_packages/',//提交地址
+							url: '/get_android_device_packages/',//提交地址
               data: {"serialno": this.selectediphone.serialno, "platform": this.selectediphone.platform}, //data
               headers: {"username": localStorage.getItem("username")}
 					})
@@ -907,7 +908,7 @@
               this.packages = res.data
           }else if(this.selectediphone.platform == "ios"){
                const res = await axios({method: 'post',//提交方法
-							url: '/get_local_device_packages_ios/',//提交地址
+							url: '/get_android_device_packages_ios/',//提交地址
               data: {"serialno": this.selectediphone.serialno, "platform": this.selectediphone.platform}, //data
               headers: {"username": localStorage.getItem("username")}
 					})
@@ -916,10 +917,10 @@
               this.packages = res.data
           }
         },
-        async get_local_device_packages_version(){
+        async get_android_device_packages_version(){
           if(this.selectediphone.platform == "android"){
               const res = await axios({method: 'post',//提交方法
-                                url: '/get_local_device_packages_version/',//提交地址
+                                url: '/get_ios_device_packages/',//提交地址
                   data: {"serialno": this.selectediphone.serialno, "package": this.package, "platform": this.selectediphone.platform}, //data
                   headers: {"username": localStorage.getItem("username")}
                         })
@@ -1066,6 +1067,7 @@
         },
 			}
 		})
+
 
 
 

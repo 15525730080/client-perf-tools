@@ -10,7 +10,7 @@ from pathlib import Path
 import psutil
 from logzero import logger
 import pynvml
-from monitor import Monitor, print_json
+from performancetest.core.monitor import Monitor, print_json
 
 try:
     pynvml.nvmlInit()
@@ -171,7 +171,7 @@ async def memory(pid):
         total_memory = psutil.virtual_memory().total / (1024 ** 2)  # In MB
         percentage_used = round((process_memory_usage / total_memory) * 100, 4)
         total_memory = total_memory / 1024
-        memory_info = {"process_memory_info": process_memory_usage, "total_memory": total_memory,
+        memory_info = {"process_memory_usage": process_memory_usage, "total_memory": total_memory,
                        "percentage_used": percentage_used, "time": start_time}
         print_json(memory_info)
         return memory_info
@@ -181,7 +181,7 @@ async def memory(pid):
 
 async def fps(pid):
     frames = WinFps(pid).fps()
-    res = {"type": "fps", "fps": len(frames), "frames": frames, "time": int(frames[0]) if frames else int(time.time())}
+    res = {"type": "fps", "fps": len(frames), "frames": frames, "time": int(frames[0])}
     print_json(res)
     return res
 

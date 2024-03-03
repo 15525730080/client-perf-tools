@@ -1,11 +1,14 @@
+import asyncio
 import concurrent.futures
+import json
 import os
 import traceback
 from builtins import *
+from pathlib import Path
 
 import numpy as np
 
-from performancetest.core.global_data import logger
+from logzero import logger
 
 
 class DataCollect(object):
@@ -390,3 +393,36 @@ class DataCollect(object):
                 traceback.print_exc()
                 perf_data[monitor]["relative_time"] = []
         return perf_data
+
+
+class ResultDataUtil(object):
+
+    @classmethod
+    def get_path_file(cls, save_dir):
+        save_dir = Path(save_dir)
+        return [c_file for c_file in save_dir.iterdir() if c_file.is_file() and c_file.suffix == ".csv"]
+
+    @classmethod
+    async def get_csv2multi_list(cls, csv_path):
+        # 读取CSV文件
+        data = await asyncio.to_thread(np.genfromtxt, csv_path, delimiter=',', dtype=str, skip_header=1,
+                                       filling_values=0, encoding="utf-8")
+        # 读取第一行作为标题（键）
+        with open(csv_path, 'r', encoding="utf-8") as file:
+            header = next(file).strip().split(',')
+            # 创建字典，将标题作为键，数据列作为值
+        result_dict = {header[i]: data[:, i].tolist() for i in range(data.shape[1])}
+        return result_dict
+
+    @classmethod
+    async def get_all_task_data(cls, save_dir):
+        print(cls.get_path_file(save_dir))
+        all_data = await asyncio.gather(*[cls.get_csv2multi_list(file.resolve()) for file in cls.get_path_file(save_dir)])
+        print(all_data)
+
+
+if __name__ == '__main__':
+    res = asyncio.run(ResultDataUtil.get_all_task_data(
+        r"E:\服务器上传代码\client-perf-tools\performancetest\web\test_result\1709475382"))
+
+    # print(json.dumps(res))

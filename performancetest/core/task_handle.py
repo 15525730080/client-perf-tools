@@ -8,9 +8,8 @@ import adbutils
 from multiprocessing.context import Process
 from performancetest.web.dao import connect, Task
 from logzero import logger
-from android_tool import perf as android_perf
-from pc_tool import perf as pc_perf
-
+from performancetest.core.android_tool import perf as android_perf
+from performancetest.core.pc_tool import perf as pc_perf
 
 
 class TaskHandle(Process):
@@ -40,9 +39,9 @@ class TaskHandle(Process):
             if current_task_running:
                 current_task_running.status = 1
                 current_task_running.pid = self.pid
-            else:
-                # raise Exception("任务不存在")
-                pass
+                session.flush()
+            # else:
+            #     raise Exception("任务不存在")
             if self.device_platform == "android":
                 try:
                     device = adbutils.device(serial=self.serialno)
@@ -56,6 +55,9 @@ class TaskHandle(Process):
                 time.sleep(0.1)
                 asyncio.run(android_perf(device, self.package, self.save_dir))
             elif self.device_platform == "ios":
+                current_task_running.status = -1
+                session.flush()
+                session.commit()
                 raise Exception("ios 设备暂不支持，因为目前ios17以上性能获取和操作需要造一些轮子，所有暂缓实现")
             elif self.device_platform == "pc":
                 asyncio.run(pc_perf(self.package, self.save_dir))
@@ -68,12 +70,12 @@ class TaskHandle(Process):
 
 
 if __name__ == '__main__':
-    # task_process = TaskHandle(serialno="emulator-5554", server_addr=["localhost", 5037],
-    #                           package="com.sankuai.meituan.merchant", save_dir="localhost", task_id=1,
-    #                           device_platform="android")
+    task_process = TaskHandle(serialno="emulator-5554", server_addr=["localhost", 5037],
+                              package="com.ss.android.ugc.aweme", save_dir="localhost", task_id=1,
+                              device_platform="android")
     # task_process.start()
     # time.sleep(2 * 10)
-    task_process = TaskHandle(serialno=None, server_addr=None,
-                              package="6728", save_dir="localhost", task_id=1, device_platform="pc")
+    # task_process = TaskHandle(serialno=None, server_addr=None,
+    #                           package="27540", save_dir="localhost", task_id=1, device_platform="pc")
     task_process.start()
-    time.sleep(2 * 10)
+    time.sleep(2 * 100)

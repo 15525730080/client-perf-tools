@@ -13,20 +13,22 @@ import traceback
 import webbrowser
 from builtins import *
 
+import adbutils
 import psutil
-from airtest.core.android.adb import ADB
 from fastapi import FastAPI, Request
 from starlette.responses import RedirectResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
+from logzero import logger
 from tidevice import Usbmux
 from tidevice._device import Device
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.getcwd()))))
-from performancetest.core.global_data import logger
 from performancetest.core.task_handle import TaskHandle
 from performancetest.web.dao import connect, Task
 from performancetest.web.entity import DeviceEntity, PackageEntity, TaskEntity
 from performancetest.web.util import DataCollect
+from performancetest.core.android_tool import *
+from performancetest.core.pc_tool import *
 
 app = FastAPI()
 logger.info("工作空间{0}".format(os.getcwd()))
@@ -52,57 +54,19 @@ def index():
     return RedirectResponse(url="/static/index.html")
 
 
-@app.get("/get_local_device/")
+@app.get("/get_android_device/")
 async def get_local_device(request: Request):
-    async def real_func():
-        client_host: str = request.client.host
-        adb: ADB = ADB(server_addr=(client_host, 5037))
-        devices: list = await asyncio.wait_for(asyncio.to_thread(adb.devices), 10)
-        logger.info("devices {0}".format(devices))
-        res_list: list = []
-        for i in devices:
-            if i[0] in cache_device_info:
-                res_list.append(cache_device_info[i[0]])
-                cache_device_info[i[0]]["host"] = client_host
-            else:
-                adb.serialno = i[0]
-                info: dict = await asyncio.wait_for(asyncio.to_thread(adb.get_device_info), 10)
-                info["host"] = client_host
-                info["port"] = 5037
-                info["platform"] = "android"
-                res_list.append(info)
-                cache_device_info[i[0]] = info
-        logger.info(res_list)
-        return res_list
-
-    return await asyncio.wait_for(real_func(), timeout=15)
+    devices = await list_devices()
+    res_list = [{"serialno": d, "host": "localhost", "port": 5037, "platform": "android"} for d in devices]
+    return res_list
 
 
-@app.post("/get_local_device_packages/")
+@app.post("/get_android_device_packages/")
 async def get_local_device_packages(request: Request, device: DeviceEntity):
-    client_host: str = request.client.host
-    adb: ADB = ADB(server_addr=(client_host, 5037), serialno=device.serialno)
-    app_list: list = await asyncio.wait_for(asyncio.to_thread(adb.list_app), 10)
-    logger.info(app_list)
-    if not app_list:
-        app_list = []
-    return [{"name": i, "package": i} for i in app_list]
+    return await app_list(device=adbutils.device(serial=device.serialno))
 
 
-@app.post("/get_local_device_packages_version/")
-async def get_local_device_packages_version(request: Request, package: PackageEntity):
-    client_host: str = request.client.host
-    adb: ADB = ADB(server_addr=(client_host, 5037), serialno=package.serialno)
-    package_info = await asyncio.wait_for(asyncio.to_thread(adb.shell, ['dumpsys', 'package', package.package]), 10)
-    matcher = re.search(r'versionName=(.*)', package_info)
-    if matcher:
-        version = matcher.group(1)
-    else:
-        version = ''
-    return version
-
-
-@app.get("/get_local_device_ios/")
+@app.get("/get_ios_device/")
 async def get_local_device_ios(request: Request):
     res = []
     for i in Usbmux().device_udid_list():
@@ -110,7 +74,7 @@ async def get_local_device_ios(request: Request):
     return res
 
 
-@app.post("/get_local_device_packages_ios/")
+@app.post("/get_ios_device_packages/")
 async def get_local_device_packages_ios(request: Request, device: DeviceEntity):
     d = Device(device.serialno)
     return [{"name": i.get("CFBundleName"), "package": i.get("CFBundleIdentifier"),
@@ -127,19 +91,19 @@ def get_all_task(request: Request):
 
 @app.post("/run_task/")
 def run_task(request: Request, task: TaskEntity):
-    client_host: str = request.client.host
+    client_host = request.client.host
     port = task.port
     serialno = task.serialno
     package = task.package
     start_time = time.time()
     status = 0
-    file_dir = os.path.join(BASE_CSV_DIR, client_host, str(int(start_time)))
+    file_dir = os.path.join(BASE_CSV_DIR, str(int(start_time)))
     logger.info("任务路径{0}".format(file_dir))
     if not os.path.exists(file_dir):
         os.makedirs(file_dir)
     return_task_id = None
     with connect() as session:
-        task_running_count = session.query(Task).filter(Task.host == client_host).filter(
+        task_running_count = session.query(Task).filter(
             Task.serialno == task.serialno).filter(
             Task.status != 2).count()
         if task_running_count > 0:
@@ -162,11 +126,10 @@ def run_all_monitor(serialno, server_addr: list, package, save_dir, task_id, dev
 
 @app.get("/stop_task/")
 def stop_task(request: Request, id: int):
-    client_host: str = request.client.host
     with connect() as session:
-        task_item = session.query(Task).filter(Task.id == id).filter(Task.host == client_host).first()
+        task_item = session.query(Task).filter(Task.id == id).first()
         if not task_item:
-            return {"code": 500, "msg": "暂无权限"}
+            return {"code": 500, "msg": "任务id错误"}
         try:
             proc = psutil.Process(task_item.pid)
             proc.kill()
@@ -182,16 +145,14 @@ def stop_task(request: Request, id: int):
                     logger.info('Stop...')
                     ts.close()
         except:
-            traceback.print_exc()
+            pass
     return {"code": 200}
 
 
 @app.get("/delete_task/")
 async def delete_task(request: Request, id: int):
-    username = request.headers.get("username")
-    client_host: str = request.client.host
     with connect() as session:
-        item = session.query(Task).filter(Task.id == id).filter(Task.host == client_host).first()
+        item = session.query(Task).filter(Task.id == id).first()
         if item:
             session.delete(item)
         if os.path.exists(item.file_dir):
@@ -204,12 +165,8 @@ async def delete_task(request: Request, id: int):
 
 @app.get("/get_task_status/")
 def get_task_status(request: Request, id: int):
-    client_host: str = request.client.host
     with connect() as session:
-        if str(id) in ["1", "2"]:
-            task_item = session.query(Task).filter(Task.id == id).first()
-        else:
-            task_item = session.query(Task).filter(Task.id == id).filter(Task.host == client_host).first()
+        task_item = session.query(Task).filter(Task.id == id).first()
         if not task_item:
             return {}
         return task_item.to_dict()
@@ -217,9 +174,8 @@ def get_task_status(request: Request, id: int):
 
 @app.get("/result/")
 def result(request: Request, id: int):
-    client_host: str = request.client.host
     with connect() as session:
-        task_item = session.query(Task).filter(Task.id == id).filter(Task.host == client_host).first()
+        task_item = session.query(Task).filter(Task.id == id).first()
         if not task_item:
             return {"result": {}}
         file_dir = task_item.file_dir

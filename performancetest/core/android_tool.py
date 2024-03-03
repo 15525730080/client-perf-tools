@@ -5,7 +5,7 @@ import traceback
 from pathlib import Path
 from logzero import logger
 from adbutils import adb, AdbDevice
-from monitor import Monitor, print_json
+from performancetest.core.monitor import Monitor, print_json
 
 
 class Fps(object):
@@ -66,6 +66,7 @@ class Fps(object):
         right_view = None
         right_view_data = []
         for index, view_res in enumerate(res):
+            print(view_res)
             if not view_res:
                 continue
             if len(view_res) < 127:
@@ -78,10 +79,12 @@ class Fps(object):
         if view:
             res_str = await asyncio.to_thread(self.device.shell, "dumpsys SurfaceFlinger --latency '{0}' ".format(view))
             frames = []
-            logger.info(res_str, view)
+            logger.info("view: {0}, res: {1}".format(view, res_str))
             for i in res_str.split("\n"):
                 if len(i.split()) >= 3:
                     if len(i.split()[1]) > 16:
+                        continue
+                    if float(i.split()[1]) <= 0:
                         continue
                     cur_frame_time = float(i.split()[1]) / 1e9 + self.start_collect_time
                     frames.append(cur_frame_time)
@@ -94,7 +97,7 @@ class Fps(object):
             cur_frames = []
             if not Fps.before_get_view_data_status:
                 view, cur_frames = await self.get_surface_view()
-                logger.info(view, cur_frames)
+                logger.info("view {0}, cur_frames {1}".format(view, cur_frames))
             else:
                 cur_frames = await self.get_view_res(Fps.surface_view)
             new_frames = [i for i in cur_frames if ((not Fps.frame_que) or (i > Fps.frame_que[-1])) and i != 0]
@@ -117,7 +120,7 @@ class Fps(object):
         info = info.split("\n")
         data_list = []
         top_activity_info = await self.get_top_activity()
-        logger.info(top_activity_info, info)
+        logger.info("gfx_fps {0}, {1}".format(top_activity_info, info))
         start_data = False  # 控制获取数据
         activity = False  # 控制获取当前activity
         data_list = []
@@ -387,6 +390,10 @@ async def battery(device: AdbDevice):
     result_dict = dict(matches)
     result_dict["type"] = "battery"
     result_dict["time"] = start_time
+    try:
+        result_dict["temperature"] = int(result_dict["temperature"]) / 10
+    except:
+        result_dict["temperature"] = 0
     print_json(result_dict)
     return result_dict
 
