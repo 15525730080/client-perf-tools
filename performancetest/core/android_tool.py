@@ -13,6 +13,7 @@ class Fps(object):
     surface_view = None
     before_get_view_data_status = False  # 上次获取view的结果，如果拿到了结果就不用修改view
     single_instance = None
+    interval = None  # fps开始获取和真实时间的间隔
 
     @staticmethod
     def check_queue_head_frames_complete():
@@ -29,7 +30,7 @@ class Fps(object):
         head_time = int(Fps.frame_que[0])
         complete_fps = []
         while int(Fps.frame_que[0]) == head_time:
-            complete_fps.append(Fps.frame_que.pop(0))
+            complete_fps.append(Fps.frame_que.pop(0) + Fps.interval)
         return complete_fps
 
     def __init__(self, device: AdbDevice, package):
@@ -37,7 +38,6 @@ class Fps(object):
         self.device = device
         self.device.shell("dumpsys SurfaceFlinger --latency-clear")
         self.device.shell("dumpsys gfxinfo {} reset".format(self.package))
-        self.start_collect_time = int(time.time())
 
     def __new__(cls, *args, **kwargs):
         if not cls.single_instance:
@@ -86,7 +86,9 @@ class Fps(object):
                         continue
                     if float(i.split()[1]) <= 0:
                         continue
-                    cur_frame_time = float(i.split()[1]) / 1e9 + self.start_collect_time
+                    cur_frame_time = float(i.split()[1]) / 1e9
+                    if not Fps.interval:
+                        Fps.interval = int(time.time()) - int(cur_frame_time)
                     frames.append(cur_frame_time)
             return frames
         else:
